@@ -45,16 +45,8 @@
 #define LOG_CATEGORY "libnfc.config"
 #define LOG_GROUP    NFC_LOG_GROUP_CONFIG
 
-#ifndef LIBNFC_SYSCONFDIR
-// If this define does not already exists, we build it using SYSCONFDIR
-#ifndef SYSCONFDIR
-#error "SYSCONFDIR is not defined but required."
-#endif // SYSCONFDIR
-#define LIBNFC_SYSCONFDIR      SYSCONFDIR"/nfc"
-#endif // LIBNFC_SYSCONFDIR
-
-#define LIBNFC_CONFFILE        "./libnfc.conf"
-#define LIBNFC_DEVICECONFDIR   "./devices.d"
+#define LIBNFC_CONFFILE_DEFAULT        "./libnfc.conf"
+#define LIBNFC_DEVICECONFDIR_DEFAULT   "./devices.d"
 
 static int
 escaped_value(const char line[BUFSIZ], int i, char **value)
@@ -275,7 +267,9 @@ conf_devices_load(const char *dirname, nfc_context *context)
         const size_t extension_len = strlen(".conf");
         if ((filename_len > extension_len) &&
             (strncmp(".conf", de->d_name + (filename_len - extension_len), extension_len) == 0)) {
-          char filename[BUFSIZ] = LIBNFC_DEVICECONFDIR"/";
+          char filename[BUFSIZ] = {0};
+          strcat(filename, dirname);
+          strcat(filename, "/");
           strcat(filename, de->d_name);
           struct stat s;
           if (stat(filename, &s) == -1) {
@@ -292,11 +286,44 @@ conf_devices_load(const char *dirname, nfc_context *context)
   }
 }
 
+
+char *get_env(const char *name, const char *default_value) {
+    char *value = getenv(name);
+    if (value != NULL) {
+        return strdup(value);
+    } else {
+        return strdup(default_value);
+    }
+}
+
+char *libnfc_conffile = NULL;
+char *libnfc_deviceconfdir = NULL;
 void
 conf_load(nfc_context *context)
 {
-  conf_parse_file(LIBNFC_CONFFILE, conf_keyvalue_context, context);
-  conf_devices_load(LIBNFC_DEVICECONFDIR, context);
+  char *sysconfdir = get_env("LIBNFC_SYSCONFDIR", "./");
+
+  if (sysconfdir != NULL) {
+      size_t conffile_len = strlen(sysconfdir) + strlen("/libnfc.conf") + 1;
+      size_t deviceconfdir_len = strlen(sysconfdir) + strlen("/devices.d") + 1;
+
+      libnfc_conffile = malloc(conffile_len);
+      libnfc_deviceconfdir = malloc(deviceconfdir_len);
+
+      snprintf(libnfc_conffile, conffile_len, "%s/libnfc.conf", sysconfdir);
+      snprintf(libnfc_deviceconfdir, deviceconfdir_len, "%s/devices.d", sysconfdir);
+
+      free(sysconfdir);
+  } else {
+      libnfc_conffile = strdup(LIBNFC_CONFFILE_DEFAULT);
+      libnfc_deviceconfdir = strdup(LIBNFC_DEVICECONFDIR_DEFAULT);
+  }
+
+  conf_parse_file(libnfc_conffile, conf_keyvalue_context, context);
+  conf_devices_load(libnfc_deviceconfdir, context);
+
+  free(libnfc_conffile);
+  free(libnfc_deviceconfdir);
 }
 
 #endif // CONFFILES
